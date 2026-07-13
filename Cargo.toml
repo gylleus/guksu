@@ -2,5 +2,48 @@
 name = "guksu"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+description = "Quantized vector-search building blocks: int8/binary distance kernels (symmetric and asymmetric), flat filtered top-k scan, rerank primitives, and a recall benchmark harness. Graph layers (HNSW) arrive in later milestones."
+readme = "README.md"
+keywords = ["vector-search", "quantization", "simd", "ann", "hnsw"]
+categories = ["algorithms", "data-structures"]
+
+[features]
+default = []
+# Everything the `recall` binary needs; the library itself is dependency-free.
+harness = ["dep:lexopt"]
+# Enables benches/simsimd_compare.rs (performance cross-check only; never a runtime dep).
+bench-simsimd = ["dep:simsimd"]
 
 [dependencies]
+lexopt = { version = "0.3", optional = true }
+simsimd = { version = "6", optional = true }
+
+[dev-dependencies]
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+
+[[bin]]
+name = "recall"
+path = "src/bin/recall/main.rs"
+required-features = ["harness"]
+
+[[bench]]
+name = "kernels"
+harness = false
+
+[[bench]]
+name = "scan"
+harness = false
+
+[[bench]]
+name = "simsimd_compare"
+harness = false
+required-features = ["bench-simsimd"]
+
+[profile.release]
+lto = "thin"
+
+# Symbols for samply/Instruments profiling of benches.
+[profile.bench]
+debug = true
