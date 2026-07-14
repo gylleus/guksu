@@ -45,12 +45,16 @@
 
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
-use std::fmt;
 
 use crate::bitset::Bitset;
 use crate::kernels::Kernels;
-use crate::query::{I8Query, ViewQuery};
 use crate::storage::{BinaryView, F32View, I8View};
+
+mod error;
+mod query;
+
+pub use error::ScanError;
+pub use query::{CorpusView, I8Query, QueryData, ViewQuery};
 
 /// A scored hit. See the module docs for the ordering contract.
 #[derive(Clone, Copy, Debug)]
@@ -115,38 +119,6 @@ pub fn select_top_k(
     out.sort_unstable_by(|a, b| b.cmp(a));
     out
 }
-
-/// A scan precondition violation — the query or filter shape does not match
-/// the view it is scored against. Returned by [`Scorer::top_k`] and
-/// [`Scorer::rerank`]; each variant carries both sides of the mismatch.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ScanError {
-    /// The filter covers a different id universe than the view has rows.
-    FilterLen { filter_len: usize, rows: usize },
-    /// The query vector's dimension differs from the view's row dimension.
-    QueryDim { query_dim: usize, view_dim: usize },
-}
-
-impl fmt::Display for ScanError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {
-            ScanError::FilterLen { filter_len, rows } => {
-                write!(
-                    f,
-                    "filter covers {filter_len} ids but the view has {rows} rows"
-                )
-            }
-            ScanError::QueryDim {
-                query_dim,
-                view_dim,
-            } => {
-                write!(f, "query dim {query_dim} vs view dim {view_dim}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for ScanError {}
 
 fn check_filter(filter: Option<&Bitset>, rows: usize) -> Result<(), ScanError> {
     match filter {

@@ -66,7 +66,6 @@ mod bitset;
 mod error;
 pub mod kernels;
 pub mod quant;
-mod query;
 #[doc(hidden)]
 pub mod rng;
 pub mod scan;
@@ -74,8 +73,7 @@ mod storage;
 
 pub use bitset::Bitset;
 pub use error::Error;
-pub use query::{CorpusView, I8Query, QueryData, ViewQuery};
-pub use scan::{Hit, ScanError, Scorer, select_top_k};
+pub use scan::{CorpusView, Hit, I8Query, QueryData, ScanError, Scorer, ViewQuery, select_top_k};
 pub use storage::{
     BinaryBlock, BinaryView, Block, F32Block, F32View, I8Block, I8View, StorageError,
 };

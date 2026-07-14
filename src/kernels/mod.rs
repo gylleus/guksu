@@ -47,6 +47,7 @@ mod scalar;
 mod x86_64;
 
 /// Number of bytes in a packed sign-bit code for `dim` dimensions (`ceil(dim/8)`).
+/// Since a byte holds 8 bits, the code length is the number of bytes needed to hold `dim` bits.
 pub const fn binary_code_len(dim: usize) -> usize {
     dim.div_ceil(8)
 }
@@ -213,7 +214,7 @@ pub fn dot_i8_bin(q: &[i8], code: &[u8]) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::quant::{pack_sign_bits_vec, quantize_i8_vec, max_abs_scale, unpack_sign_bits};
+    use crate::quant::{max_abs_scale, pack_sign_bits_vec, quantize_i8_vec, unpack_sign_bits};
     use crate::rng::SplitMix64;
 
     fn bit(code: &[u8], i: usize) -> bool {
@@ -222,7 +223,11 @@ mod tests {
 
     fn normalized_gaussian(rng: &mut SplitMix64, d: usize) -> Vec<f32> {
         let mut v: Vec<f32> = (0..d).map(|_| rng.next_gaussian() as f32).collect();
-        let norm = v.iter().map(|&x| (x as f64) * (x as f64)).sum::<f64>().sqrt() as f32;
+        let norm = v
+            .iter()
+            .map(|&x| (x as f64) * (x as f64))
+            .sum::<f64>()
+            .sqrt() as f32;
         if norm > 0.0 {
             for x in &mut v {
                 *x /= norm;
@@ -254,7 +259,9 @@ mod tests {
     fn i8_extremes_exact() {
         // Alternating ±127 self-dot: every term is +16129. This is the
         // permanent tripwire for saturating-i16 implementations (maddubs).
-        let alt: Vec<i8> = (0..1024).map(|i| if i % 2 == 0 { 127 } else { -127 }).collect();
+        let alt: Vec<i8> = (0..1024)
+            .map(|i| if i % 2 == 0 { 127 } else { -127 })
+            .collect();
         assert_eq!(dot_i8(&alt, &alt), 1024 * 16129);
 
         // Full-domain −128 must be exact (Voyage int8 rows can contain it).
@@ -277,7 +284,9 @@ mod tests {
     #[test]
     fn hamming_matches_per_bit_naive() {
         let mut rng = SplitMix64::new(11);
-        for d in [1usize, 2, 7, 8, 9, 15, 16, 17, 63, 64, 65, 127, 128, 1000, 1024, 1027] {
+        for d in [
+            1usize, 2, 7, 8, 9, 15, 16, 17, 63, 64, 65, 127, 128, 1000, 1024, 1027,
+        ] {
             for _ in 0..20 {
                 let a = random_code(&mut rng, d);
                 let b = random_code(&mut rng, d);
@@ -313,7 +322,11 @@ mod tests {
             let code = pack_sign_bits_vec(&x);
             let mut unpacked = vec![0.0f32; d];
             unpack_sign_bits(&code, &mut unpacked);
-            assert_eq!((s.dot_f32_bin)(&q, &code), (s.dot_f32)(&q, &unpacked), "d={d}");
+            assert_eq!(
+                (s.dot_f32_bin)(&q, &code),
+                (s.dot_f32)(&q, &unpacked),
+                "d={d}"
+            );
         }
     }
 
@@ -321,10 +334,18 @@ mod tests {
     fn asym_i8_bin_matches_naive() {
         let mut rng = SplitMix64::new(13);
         for d in [1usize, 7, 8, 64, 65, 1000, 1024, 1027] {
-            let q: Vec<i8> = (0..d).map(|_| (rng.next_range(256) as i16 - 128) as i8).collect();
+            let q: Vec<i8> = (0..d)
+                .map(|_| (rng.next_range(256) as i16 - 128) as i8)
+                .collect();
             let code = random_code(&mut rng, d);
             let naive: i32 = (0..d)
-                .map(|i| if bit(&code, i) { q[i] as i32 } else { -(q[i] as i32) })
+                .map(|i| {
+                    if bit(&code, i) {
+                        q[i] as i32
+                    } else {
+                        -(q[i] as i32)
+                    }
+                })
                 .sum();
             assert_eq!(dot_i8_bin(&q, &code), naive, "d={d}");
         }

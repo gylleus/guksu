@@ -10,8 +10,8 @@
 //!
 //! [`Scorer`]: crate::scan::Scorer
 
-use crate::scan::ScanError;
 use crate::storage::{BinaryView, F32View, I8View};
+use super::ScanError;
 
 /// A corpus representation scannable by a [`Scorer`](crate::scan::Scorer):
 /// its geometry plus the canonical query encoding scored against it.

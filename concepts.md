@@ -63,9 +63,8 @@ A *kernel* (in the HPC sense) is the innermost tight loop that does the
 arithmetic — here a pure function `(query, row) → score` over two borrowed
 slices. Everything else in a search is bookkeeping around n kernel calls,
 so kernels are 100% of the per-row math: at 100k × 1024-dim, one query is
-~100M multiply-adds through a kernel. That is why they get their own module
-(`src/kernels/`), hand-written SIMD, and the strictest contracts in the
-crate.
+~100M multiply-adds through a kernel. That is why they get hand-written SIMD
+and the strictest contracts in the crate.
 
 There are five, one per (query encoding × row encoding) pairing:
 
@@ -136,14 +135,14 @@ once per scan and hands each row to a direct `(kern.dot_f32)(q, row)`.
 
 ### Implementation tricks worth knowing
 
-Each backend file documents these in place; this is the index of *why* the
-code looks the way it does.
+Each backend documents these in place; this is the index of *why* the code
+looks the way it does.
 
 | trick | where | why |
 |-------|-------|-----|
 | independent accumulators | every kernel | Latency hiding: one accumulator serializes on its own dependency chain. Counts vary per kernel and backend — see [Sizing the unroll](#sizing-the-unroll-how-many-accumulators) below. The fixed reduction tree is what makes results deterministic. |
-| `sdot` via inline asm | `aarch64.rs` | The dotprod *instruction* is stable hardware; the Rust *intrinsic* (`vdotq_s32`) is still unstable. One asm line with `pure, nomem, nostack` lets LLVM optimize around it. |
-| sign-extend + `vpmaddwd`, never `maddubs` | `x86_64.rs` | `maddubs` saturates in i16 (a single ±127 product pair nearly fills the range) and the sign trick needs `abs_epi8`, where `abs_epi8(-128) == -128`. Provider int8 contains −128, so the exact (≈half-throughput) path wins. The alternating-±127 test in `kernels/mod.rs` is the permanent tripwire. |
+| `sdot` via inline asm | aarch64 | The dotprod *instruction* is stable hardware; the Rust *intrinsic* (`vdotq_s32`) is still unstable. One asm line with `pure, nomem, nostack` lets LLVM optimize around it. |
+| sign-extend + `vpmaddwd`, never `maddubs` | x86_64 | `maddubs` saturates in i16 (a single ±127 product pair nearly fills the range) and the sign trick needs `abs_epi8`, where `abs_epi8(-128) == -128`. Provider int8 contains −128, so the exact (≈half-throughput) path wins. The alternating-±127 test in the kernel unit tests is the permanent tripwire. |
 | XOR sign-flip | `dot_f32_bin`, both SIMD backends | Multiply-by-±1.0 without rounding: broadcast the negated code byte, shift each lane's bit to position 31, AND with `0x8000_0000`, XOR onto the query floats. Exact even for NaN/Inf/denormals. |
 | ±1 lane expansion | `dot_i8_bin` | Broadcast code bytes, test against MSB-first bit masks → 0xFF/0x00 lanes, map to +1/−1 via `(mask & 2) − 1`, then reuse the exact int8 dot machinery. |
 | u16 drain every ≤512 iterations | NEON `hamming` | Per-lane popcount accumulates ≤16 per u16 lane per iteration; draining to u32 inside that budget means codes of any length count exactly. |
@@ -224,7 +223,7 @@ load-bound, so the answer stays small — it is register-blocked kernels
 (GEMM tiles, where loads amortize over many FMAs) that need the full
 latency × ports ≈ 8–10 chains. And the arithmetic only picks the starting
 point: the counts above are the smallest that hit each kernel's measured
-roof, and `benches/kernels.rs` is the arbiter for changing any of them.
+roof, and the kernel benchmarks are the arbiter for changing any of them.
 
 ## Representations and quantization
 
@@ -237,7 +236,7 @@ int8    ████████                          1024   magnitude to ~1
 binary  █                                  128   sign of each dimension only
 ```
 
-`quant/` produces the two compressed forms. Both quantizers assume
+The quantizers produce the two compressed forms. Both assume
 L2-normalized, zero-centered embedding data — that assumption is what makes
 the cheap schemes below competitive with fancier ones.
 
@@ -329,7 +328,7 @@ every byte means someone ingested offset-binary bytes without converting.
 ## Scanning
 
 A scan is the brute-force loop: stream candidate ids, score each row with
-one kernel call, keep the k best. `src/scan.rs` builds this in two layers.
+one kernel call, keep the k best. It is built in two layers.
 
 ### The selection core
 
@@ -389,9 +388,9 @@ cannot make equality disagree with the ordering.)
 
 ### Errors at the seam, asserts below it
 
-Two seams return errors instead of panicking, and `src/error.rs` wraps both
-in one crate-level `Error` (with `From` impls) for callers composing them
-behind a single `?`:
+Two seams return errors instead of panicking, and one crate-level `Error`
+wraps both (with `From` impls) for callers composing them behind a
+single `?`:
 
 - The scan API returns `ScanError` (`QueryDim`, `FilterLen`) — a query or
   filter whose shape does not match the view.
@@ -456,7 +455,7 @@ the README.)
 
 ## Storage: blocks and views
 
-`storage.rs` separates *owning* from *reading*:
+Storage separates *owning* from *reading*:
 
 - **Blocks** (`F32Block`, `I8Block`, `BinaryBlock`) are owned, row-major
   convenience containers: copy-in constructors (`F32Block::from_flat`) and
@@ -493,17 +492,17 @@ in the first place.
 
 Because the flat f32 scan is exact and the ordering is total, ground truth
 is just `Scorer::F32::top_k` — same code path, same tie rule. recall@k is
-the overlap between a config's top-k and that ground truth. The `recall`
-harness (`src/bin/recall`, `--features harness`) sweeps the whole matrix —
-{int8, binary, binary→int8 rerank, binary→f32 rerank} × {symmetric,
-asymmetric} × rerank depth × filter selectivity — on synthetic GMM data or
-real `.npy` exports. That matrix is M0's reason to exist: choose a
-quantization config on evidence before any graph work begins.
+the overlap between a config's top-k and that ground truth. The recall
+harness sweeps the whole matrix — {int8, binary, binary→int8 rerank,
+binary→f32 rerank} × {symmetric, asymmetric} × rerank depth × filter
+selectivity — on synthetic GMM data or real `.npy` exports. That matrix
+is M0's reason to exist: choose a quantization config on evidence before
+any graph work begins.
 
 The verification stack underneath:
 
-- `tests/kernel_agreement.rs` runs every backend the CPU supports against
-  the scalar oracle — exact equality for integer kernels, an f64-referenced
+- A backend-agreement test runs every backend the CPU supports against the
+  scalar oracle — exact equality for integer kernels, an f64-referenced
   bound for f32 — across a dimension list (1, 2, 3, 7, 8, 9, … 1024, 1027)
   chosen to cross every lane width, byte boundary, and unroll boundary.
 - `GUKSU_REQUIRE=<backend>` makes the test suite fail if detection picked
@@ -511,31 +510,10 @@ The verification stack underneath:
 - In-module kernel tests pin semantics: int8 exactness at ±127/−128,
   NaN/Inf pass-through, the padding contract, sign-flip exactness, and a
   statistical bound tying scaled int8 dots to f32 dots.
-- All randomness is `rng::SplitMix64` (doc-hidden) — seeded, dependency-
-  free, with substreams — so every test and harness run is reproducible.
-- `benches/` measures kernels and scans; `simsimd_compare` cross-checks
+- All randomness is a seeded SplitMix64 (doc-hidden) — dependency-free, with
+  substreams — so every test and harness run is reproducible.
+- Benchmarks measure kernels and scans; a simsimd cross-check compares
   against a C baseline.
-
-## Repo map
-
-| path                        | contents |
-|-----------------------------|----------|
-| `src/kernels/mod.rs`        | kernel contracts, `Kernels` vtable, detection, free fns |
-| `src/kernels/scalar.rs`     | portable reference — the test oracle |
-| `src/kernels/aarch64.rs`    | NEON backend (+ dotprod upgrade for int8) |
-| `src/kernels/x86_64.rs`     | AVX2 backend |
-| `src/quant/binary.rs`       | sign-bit pack/unpack (MSB-first) |
-| `src/quant/int8.rs`         | symmetric int8 quantize/dequantize, scales |
-| `src/quant/parity.rs`       | provider-parity checks, offset-binary conversion |
-| `src/storage.rs`            | `Block` trait, owned blocks + borrowed views (the mmap seam), `StorageError` |
-| `src/query.rs`              | `ViewQuery`, `CorpusView`, `QueryData`, `I8Query` |
-| `src/scan.rs`               | `Hit`, `select_top_k`, `Scorer`, `ScanError` |
-| `src/error.rs`              | crate-level `Error` wrapping `ScanError`/`StorageError` |
-| `src/bitset.rs`             | filter bitmap (`iter_ones` drives filtered scans) |
-| `src/rng.rs`                | SplitMix64 (tests/harness; doc-hidden) |
-| `src/bin/recall/`           | recall benchmark harness |
-| `tests/kernel_agreement.rs` | SIMD-vs-scalar agreement gate |
-| `benches/`                  | kernel/scan Criterion benches, simsimd cross-check |
 
 ## Glossary
 
