@@ -59,7 +59,7 @@ specific path.
 ## Quickstart (library)
 
 ```rust
-use guksu::{BinaryBlock, F32Block, Scorer, ViewQuery};
+use guksu::{BinaryBlock, Block, F32Block, Scorer, ViewQuery};
 
 // Four 4-dim vectors, row-major.
 let corpus = F32Block::from_flat(
@@ -70,7 +70,8 @@ let corpus = F32Block::from_flat(
         0.0, 0.0, 0.707, 0.707,
     ],
     4,
-);
+)
+.unwrap();
 let bins = BinaryBlock::from_f32(&corpus); // 1 bit/dim coarse codes
 let query = [0.9f32, 0.1, -0.1, -0.1];
 

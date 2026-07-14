@@ -31,7 +31,8 @@ fn main() {
     );
 
     let t1 = Instant::now();
-    let data = eval::Data::prepare(&corpus, &queries, dim);
+    let data =
+        eval::Data::prepare(&corpus, &queries, dim).unwrap_or_else(|e| die(&e.to_string()));
     drop(corpus);
     let code_len = guksu::kernels::binary_code_len(dim);
     println!(

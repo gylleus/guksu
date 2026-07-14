@@ -5,7 +5,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use guksu::{BinaryBlock, Bitset, F32Block, Hit, I8Block, I8Query, Scorer, ViewQuery};
+use guksu::{
+    BinaryBlock, Bitset, Block, F32Block, Hit, I8Block, I8Query, Scorer, StorageError, ViewQuery,
+};
 
 // ---------------------------------------------------------------- data prep
 
@@ -21,8 +23,13 @@ pub struct Data {
 }
 
 impl Data {
-    pub fn prepare(corpus_flat: &[f32], queries_flat: &[f32], dim: usize) -> Data {
-        let f32s = F32Block::from_flat(corpus_flat, dim);
+    /// Fails if `corpus_flat` is not whole rows of `dim`.
+    pub fn prepare(
+        corpus_flat: &[f32],
+        queries_flat: &[f32],
+        dim: usize,
+    ) -> Result<Data, StorageError> {
+        let f32s = F32Block::from_flat(corpus_flat, dim)?;
         let i8s = I8Block::from_f32_per_vector(&f32s);
         let bins = BinaryBlock::from_f32(&f32s);
         let q_f32: Vec<Vec<f32>> = queries_flat
@@ -42,7 +49,7 @@ impl Data {
             .iter()
             .map(|q| guksu::quant::pack_sign_bits_vec(q))
             .collect();
-        Data {
+        Ok(Data {
             f32s,
             i8s,
             bins,
@@ -50,7 +57,7 @@ impl Data {
             q_i8,
             q_scales,
             q_bits,
-        }
+        })
     }
 
     pub fn queries(&self) -> usize {
@@ -522,7 +529,7 @@ mod tests {
         let corpus = crate::synth::generate(Dist::Gmm, 400, dim, 8, 5, 0, 2);
         let queries =
             crate::synth::generate(Dist::Gmm, 30, dim, 8, 5, crate::synth::QUERY_STREAM, 2);
-        let data = Data::prepare(&corpus, &queries, dim);
+        let data = Data::prepare(&corpus, &queries, dim).unwrap();
         let ks = [10usize];
         let gt = ground_truth(&data, 10, None, 2);
         let rows = run_matrix(&data, &matrix(&[2, 8], false), &ks, &gt, None, 2);

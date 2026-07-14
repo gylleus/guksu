@@ -19,17 +19,19 @@
 //!   `(score descending, id ascending)` using `f32::total_cmp`. Binary codes
 //!   at 1024 bits admit only 1025 distinct Hamming values, so massive score
 //!   ties are the norm, not the edge case — the tie rule is load-bearing.
-//! - **Shape mismatches are errors, not panics, at the scan API**:
+//! - **Shape mismatches are errors, not panics, at the public seams**:
 //!   [`Scorer::top_k`] and [`Scorer::rerank`] report a query/filter that does
-//!   not match the view as a [`ScanError`]. Low-level kernels and block
-//!   constructors keep their assert-based contracts.
+//!   not match the view as a [`ScanError`]; block and view constructors report
+//!   inconsistent geometry as a [`StorageError`]. [`Error`] wraps both for
+//!   callers composing the seams. Low-level kernels and row accessors keep
+//!   their assert-based contracts.
 //! - Vector data is always borrowed (`&[f32]`, `&[i8]`, `&[u8]` rows); hot
 //!   paths never allocate. Owned blocks exist only as convenience containers.
 //!
 //! # Quickstart
 //!
 //! ```
-//! use guksu::{BinaryBlock, F32Block, Scorer, ViewQuery};
+//! use guksu::{BinaryBlock, Block, F32Block, Scorer, ViewQuery};
 //!
 //! // Four 4-dim vectors, row-major.
 //! let corpus = F32Block::from_flat(
@@ -40,7 +42,8 @@
 //!         0.0, 0.0, 0.707, 0.707,
 //!     ],
 //!     4,
-//! );
+//! )
+//! .unwrap();
 //! let bins = BinaryBlock::from_f32(&corpus); // 1 bit/dim coarse codes
 //! let query = [0.9f32, 0.1, -0.1, -0.1];
 //!
@@ -60,6 +63,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod bitset;
+mod error;
 pub mod kernels;
 pub mod quant;
 mod query;
@@ -69,6 +73,9 @@ pub mod scan;
 mod storage;
 
 pub use bitset::Bitset;
+pub use error::Error;
 pub use query::{CorpusView, I8Query, QueryData, ViewQuery};
 pub use scan::{Hit, ScanError, Scorer, select_top_k};
-pub use storage::{BinaryBlock, BinaryView, F32Block, F32View, I8Block, I8View};
+pub use storage::{
+    BinaryBlock, BinaryView, Block, F32Block, F32View, I8Block, I8View, StorageError,
+};

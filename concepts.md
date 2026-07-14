@@ -389,13 +389,24 @@ cannot make equality disagree with the ordering.)
 
 ### Errors at the seam, asserts below it
 
-The scan API returns `ScanError` (`QueryDim`, `FilterLen`) for shape
-mismatches — those are recoverable configuration bugs. Kernels and block
-constructors keep assert-based contracts — by the time a kernel runs,
-shapes were either validated by the scan layer or are the caller's bug.
-One wrinkle: packed-bits queries have a byte length, not a dim in view
-units, so they opt out of the scan-time dim check (`QueryData::dim = None`)
-and the Hamming kernel validates them per row instead.
+Two seams return errors instead of panicking, and `src/error.rs` wraps both
+in one crate-level `Error` (with `From` impls) for callers composing them
+behind a single `?`:
+
+- The scan API returns `ScanError` (`QueryDim`, `FilterLen`) — a query or
+  filter whose shape does not match the view.
+- Block and view constructors (`F32Block::from_flat`, the raw-parts
+  `*View::new`) return `StorageError` (`ZeroDim`, `Ragged`, `Stride`,
+  `ScaleCount`, `TooManyRows`) — inconsistent geometry, validated up front
+  because the view constructors are exactly where M1's mmap parser will
+  ingest foreign bytes, and a parser must reject, never panic.
+
+Below the seams, kernels and row accessors keep assert-based contracts — by
+the time a kernel runs, shapes were either validated by the layers above or
+are the caller's bug. One wrinkle: packed-bits queries have a byte length,
+not a dim in view units, so they opt out of the scan-time dim check
+(`QueryData::dim = None`) and the Hamming kernel validates them per row
+instead.
 
 ## Two-stage search: coarse → precise
 
@@ -451,10 +462,14 @@ the README.)
   convenience containers: copy-in constructors (`F32Block::from_flat`) and
   quantizing constructors (`I8Block::from_f32_per_vector` /
   `::from_f32_fixed`, `BinaryBlock::from_f32`) that uphold the quantizer
-  contracts for you.
+  contracts for you. All three implement the `Block` trait — `len`, `dim`,
+  `is_empty`, and `view()` through a generic associated type — so build-side
+  code can be generic over the representation.
 - **Views** (`F32View`, `I8View`, `BinaryView`) are `Copy` borrows — the
   only thing scans and kernels ever read. `row(i)` returns exactly `dim`
-  elements; `I8View::scale(i)` rides alongside for the score formula.
+  elements; `I8View::scale(i)` rides alongside for the score formula. The
+  raw-parts `*View::new` constructors validate geometry and return
+  `StorageError` — they are the ingestion path a mapped file will use.
 
 ```
 offset:   0                stride              2·stride
@@ -512,9 +527,10 @@ The verification stack underneath:
 | `src/quant/binary.rs`       | sign-bit pack/unpack (MSB-first) |
 | `src/quant/int8.rs`         | symmetric int8 quantize/dequantize, scales |
 | `src/quant/parity.rs`       | provider-parity checks, offset-binary conversion |
-| `src/storage.rs`            | owned blocks + borrowed views (the mmap seam) |
+| `src/storage.rs`            | `Block` trait, owned blocks + borrowed views (the mmap seam), `StorageError` |
 | `src/query.rs`              | `ViewQuery`, `CorpusView`, `QueryData`, `I8Query` |
 | `src/scan.rs`               | `Hit`, `select_top_k`, `Scorer`, `ScanError` |
+| `src/error.rs`              | crate-level `Error` wrapping `ScanError`/`StorageError` |
 | `src/bitset.rs`             | filter bitmap (`iter_ones` drives filtered scans) |
 | `src/rng.rs`                | SplitMix64 (tests/harness; doc-hidden) |
 | `src/bin/recall/`           | recall benchmark harness |

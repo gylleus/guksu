@@ -24,8 +24,8 @@
 //! the precise store — coarse scores are never blended:
 //!
 //! ```
-//! use guksu::{BinaryBlock, F32Block, Scorer, ViewQuery, quant};
-//! let corpus = F32Block::from_flat(&[1.0, 0.0, -0.6, 0.8, 0.6, 0.8], 2);
+//! use guksu::{BinaryBlock, Block, F32Block, Scorer, ViewQuery, quant};
+//! let corpus = F32Block::from_flat(&[1.0, 0.0, -0.6, 0.8, 0.6, 0.8], 2).unwrap();
 //! let bin = BinaryBlock::from_f32(&corpus);
 //! let query = [0.6f32, -0.8];
 //! let q_bits = quant::pack_sign_bits_vec(&query);
@@ -287,7 +287,7 @@ mod tests {
     use super::*;
     use crate::quant::{max_abs_scale, pack_sign_bits_vec, quantize_i8_vec};
     use crate::rng::SplitMix64;
-    use crate::storage::{BinaryBlock, F32Block, I8Block};
+    use crate::storage::{BinaryBlock, Block, F32Block, I8Block};
 
     fn naive_top_k(hits: impl IntoIterator<Item = Hit>, k: usize) -> Vec<Hit> {
         let mut all: Vec<Hit> = hits.into_iter().collect();
@@ -298,7 +298,7 @@ mod tests {
 
     fn random_block(rng: &mut SplitMix64, n: usize, dim: usize) -> F32Block {
         let flat: Vec<f32> = (0..n * dim).map(|_| rng.next_f32() * 2.0 - 1.0).collect();
-        F32Block::from_flat(&flat, dim)
+        F32Block::from_flat(&flat, dim).unwrap()
     }
 
     #[test]
@@ -593,7 +593,7 @@ mod tests {
 
     #[test]
     fn filter_length_mismatch_errors() {
-        let block = F32Block::from_flat(&[1.0, 2.0], 2);
+        let block = F32Block::from_flat(&[1.0, 2.0], 2).unwrap();
         let err = Scorer::F32 {
             query: ViewQuery {
                 view: block.view(),
@@ -617,7 +617,7 @@ mod tests {
 
     #[test]
     fn query_dim_mismatch_errors() {
-        let block = F32Block::from_flat(&[1.0, 2.0], 2);
+        let block = F32Block::from_flat(&[1.0, 2.0], 2).unwrap();
         let scorer = Scorer::F32 {
             query: ViewQuery {
                 view: block.view(),
@@ -637,7 +637,7 @@ mod tests {
     fn f32bin_query_dim_mismatch_errors() {
         // BinView::dim() is in bits (the original vector dim), so an
         // asymmetric query must match the unpacked dim, not the byte length.
-        let block = F32Block::from_flat(&[1.0, 2.0], 2);
+        let block = F32Block::from_flat(&[1.0, 2.0], 2).unwrap();
         let bins = BinaryBlock::from_f32(&block);
         let err = Scorer::F32Bin {
             query: ViewQuery {

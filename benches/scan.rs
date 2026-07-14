@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use guksu::rng::SplitMix64;
-use guksu::{BinaryBlock, Bitset, F32Block, I8Block, I8Query, Scorer, ViewQuery};
+use guksu::{BinaryBlock, Bitset, Block, F32Block, I8Block, I8Query, Scorer, ViewQuery};
 
 const DIM: usize = 1024;
 const K: usize = 48;
@@ -25,7 +25,7 @@ struct Data {
 fn setup(n: usize) -> Data {
     let mut rng = SplitMix64::new(0x5CA7);
     let flat: Vec<f32> = (0..n * DIM).map(|_| rng.next_f32() * 2.0 - 1.0).collect();
-    let f32s = F32Block::from_flat(&flat, DIM);
+    let f32s = F32Block::from_flat(&flat, DIM).unwrap();
     let i8s = I8Block::from_f32_per_vector(&f32s);
     let bins = BinaryBlock::from_f32(&f32s);
     let q_f32: Vec<Vec<f32>> = (0..QUERIES)
